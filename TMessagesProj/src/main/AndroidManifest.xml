@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools"
-    package="ir.limon.gram"
+    package="ir.limon.itel"
 
     android:installLocation="auto">
     <!--HOSHYAR-->
     <uses-sdk
         tools:overrideLibrary="co.ronash.pushe" />
     <permission
-        android:name="ir.limon.gram.permission.C2D_MESSAGE"
+        android:name="ir.limon.itel.permission.C2D_MESSAGE"
         android:protectionLevel="signature" />
-    <uses-permission android:name="ir.limon.gram.permission.C2D_MESSAGE" />
+    <uses-permission android:name="ir.limon.itel.permission.C2D_MESSAGE" />
     <!--HOSHYAR-->
     <supports-screens android:anyDensity="true"
                       android:largeScreens="true"
