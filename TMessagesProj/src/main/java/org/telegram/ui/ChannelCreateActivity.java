@@ -64,9 +64,7 @@ import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Adapters.ContactsAdapter;
 import org.telegram.ui.Adapters.SearchAdapter;
-import org.telegram.ui.Cells.AdminedChannelCell;
 import org.telegram.ui.Cells.HeaderCell;
-import org.telegram.ui.Cells.LoadingCell;
 import org.telegram.ui.Cells.RadioButtonCell;
 import org.telegram.ui.Cells.ShadowSectionCell;
 import org.telegram.ui.Cells.TextBlockCell;
@@ -84,18 +82,16 @@ import java.util.HashMap;
 
 public class ChannelCreateActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate, AvatarUpdater.AvatarUpdaterDelegate {
 
+    private final static int done_button = 1;
     private View doneButton;
     private EditText nameTextView;
-    private ProgressDialog progressDialog;
-    private ShadowSectionCell sectionCell;
+    private ProgressDialog progressDialog = null;
     private BackupImageView avatarImage;
     private AvatarDrawable avatarDrawable;
     private AvatarUpdater avatarUpdater;
     private EditText descriptionTextView;
     private TLRPC.FileLocation avatar;
-    private String nameToSet;
-
-    private LinearLayout linearLayout;
+    private String nameToSet = null;
     private LinearLayout linkContainer;
     private LinearLayout publicContainer;
     private TextBlockCell privateContainer;
@@ -104,19 +100,13 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
     private TextInfoPrivacyCell typeInfoCell;
     private TextView checkTextView;
     private HeaderCell headerCell;
-    private int checkReqId;
-    private String lastCheckName;
-    private Runnable checkRunnable;
-    private boolean lastNameAvailable;
-    private boolean isPrivate;
+    private int checkReqId = 0;
+    private String lastCheckName = null;
+    private Runnable checkRunnable = null;
+    private boolean lastNameAvailable = false;
+    private boolean isPrivate = false;
     private boolean loadingInvite;
     private TLRPC.ExportedChatInvite invite;
-
-    private boolean loadingAdminedChannels;
-    private TextInfoPrivacyCell adminedInfoCell;
-    private ArrayList<AdminedChannelCell> adminedChannelCells = new ArrayList<>();
-    private LoadingCell loadingAdminedCell;
-
     private ContactsAdapter listViewAdapter;
     private TextView emptyTextView;
     private LetterSectionsListView listView;
@@ -128,16 +118,12 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
     private int beforeChangeIndex;
     private boolean ignoreChange;
     private CharSequence changeString;
-
     private int currentStep;
     private int chatId;
     private boolean canCreatePublic = true;
     private TLRPC.InputFile uploadedAvatar;
-
     private boolean createAfterUpload;
     private boolean donePressed;
-
-    private final static int done_button = 1;
 
     public ChannelCreateActivity(Bundle args) {
         super(args);
@@ -164,9 +150,6 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
             if (currentStep == 1) {
                 canCreatePublic = args.getBoolean("canCreatePublic", true);
                 isPrivate = !canCreatePublic;
-                if (!canCreatePublic) {
-                    loadAdminedChannels();
-                }
             }
             chatId = args.getInt("chat_id", 0);
         }
@@ -325,6 +308,7 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
         ActionBarMenu menu = actionBar.createMenu();
         doneButton = menu.addItemWithWidth(done_button, R.drawable.ic_done, AndroidUtilities.dp(56));
 
+        LinearLayout linearLayout;
         if (currentStep != 2) {
             fragmentView = new ScrollView(context);
             ScrollView scrollView = (ScrollView) fragmentView;
@@ -489,6 +473,14 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
             radioButtonCell1.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
+                    if (!canCreatePublic) {
+                        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                        builder.setTitle(LocaleController.getString("AppName", R.string.AppName));
+                        builder.setMessage(LocaleController.getString("ChannelPublicLimitReached", R.string.ChannelPublicLimitReached));
+                        builder.setPositiveButton(LocaleController.getString("OK", R.string.OK), null);
+                        showDialog(builder.create());
+                        return;
+                    }
                     if (!isPrivate) {
                         return;
                     }
@@ -512,7 +504,7 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
                 }
             });
 
-            sectionCell = new ShadowSectionCell(context);
+            ShadowSectionCell sectionCell = new ShadowSectionCell(context);
             linearLayout.addView(sectionCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
             linkContainer = new LinearLayout(context);
@@ -564,7 +556,7 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
 
                 @Override
                 public void onTextChanged(CharSequence charSequence, int i, int i2, int i3) {
-                    checkUserName(nameTextView.getText().toString());
+                    checkUserName(nameTextView.getText().toString(), false);
                 }
 
                 @Override
@@ -602,13 +594,6 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
             typeInfoCell = new TextInfoPrivacyCell(context);
             typeInfoCell.setBackgroundResource(R.drawable.greydivider_bottom);
             linearLayout.addView(typeInfoCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-
-            loadingAdminedCell = new LoadingCell(context);
-            linearLayout.addView(loadingAdminedCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
-
-            adminedInfoCell = new TextInfoPrivacyCell(context);
-            adminedInfoCell.setBackgroundResource(R.drawable.greydivider_bottom);
-            linearLayout.addView(adminedInfoCell, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
             updatePrivatePublic();
         } else if (currentStep == 2) {
@@ -874,50 +859,16 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
     }
 
     private void updatePrivatePublic() {
-        if (sectionCell == null) {
-            return;
-        }
-        if (!isPrivate && !canCreatePublic) {
-            typeInfoCell.setText(LocaleController.getString("ChangePublicLimitReached", R.string.ChangePublicLimitReached));
-            typeInfoCell.setTextColor(0xffcf3030);
-            linkContainer.setVisibility(View.GONE);
-            sectionCell.setVisibility(View.GONE);
-            if (loadingAdminedChannels) {
-                loadingAdminedCell.setVisibility(View.VISIBLE);
-                for (int a = 0; a < adminedChannelCells.size(); a++) {
-                    adminedChannelCells.get(a).setVisibility(View.GONE);
-                }
-                typeInfoCell.setBackgroundResource(R.drawable.greydivider_bottom);
-                adminedInfoCell.setVisibility(View.GONE);
-            } else {
-                typeInfoCell.setBackgroundResource(R.drawable.greydivider);
-                loadingAdminedCell.setVisibility(View.GONE);
-                for (int a = 0; a < adminedChannelCells.size(); a++) {
-                    adminedChannelCells.get(a).setVisibility(View.VISIBLE);
-                }
-                adminedInfoCell.setVisibility(View.VISIBLE);
-            }
-        } else {
-            typeInfoCell.setTextColor(0xff808080);
-            sectionCell.setVisibility(View.VISIBLE);
-            adminedInfoCell.setVisibility(View.GONE);
-            typeInfoCell.setBackgroundResource(R.drawable.greydivider_bottom);
-            for (int a = 0; a < adminedChannelCells.size(); a++) {
-                adminedChannelCells.get(a).setVisibility(View.GONE);
-            }
-            linkContainer.setVisibility(View.VISIBLE);
-            loadingAdminedCell.setVisibility(View.GONE);
-            typeInfoCell.setText(isPrivate ? LocaleController.getString("ChannelPrivateLinkHelp", R.string.ChannelPrivateLinkHelp) : LocaleController.getString("ChannelUsernameHelp", R.string.ChannelUsernameHelp));
-            headerCell.setText(isPrivate ? LocaleController.getString("ChannelInviteLinkTitle", R.string.ChannelInviteLinkTitle) : LocaleController.getString("ChannelLinkTitle", R.string.ChannelLinkTitle));
-            publicContainer.setVisibility(isPrivate ? View.GONE : View.VISIBLE);
-            privateContainer.setVisibility(isPrivate ? View.VISIBLE : View.GONE);
-            linkContainer.setPadding(0, 0, 0, isPrivate ? 0 : AndroidUtilities.dp(7));
-            privateContainer.setText(invite != null ? invite.link : LocaleController.getString("Loading", R.string.Loading), false);
-            checkTextView.setVisibility(!isPrivate && checkTextView.length() != 0 ? View.VISIBLE : View.GONE);
-        }
         radioButtonCell1.setChecked(!isPrivate, true);
         radioButtonCell2.setChecked(isPrivate, true);
+        typeInfoCell.setText(isPrivate ? LocaleController.getString("ChannelPrivateLinkHelp", R.string.ChannelPrivateLinkHelp) : LocaleController.getString("ChannelUsernameHelp", R.string.ChannelUsernameHelp));
+        headerCell.setText(isPrivate ? LocaleController.getString("ChannelInviteLinkTitle", R.string.ChannelInviteLinkTitle) : LocaleController.getString("ChannelLinkTitle", R.string.ChannelLinkTitle));
+        publicContainer.setVisibility(isPrivate ? View.GONE : View.VISIBLE);
+        privateContainer.setVisibility(isPrivate ? View.VISIBLE : View.GONE);
+        linkContainer.setPadding(0, 0, 0, isPrivate ? 0 : AndroidUtilities.dp(7));
+        privateContainer.setText(invite != null ? invite.link : LocaleController.getString("Loading", R.string.Loading), false);
         nameTextView.clearFocus();
+        checkTextView.setVisibility(!isPrivate && checkTextView.length() != 0 ? View.VISIBLE : View.GONE);
         AndroidUtilities.hideKeyboard(nameTextView);
     }
 
@@ -992,7 +943,7 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
     @Override
     public void didReceivedNotification(int id, final Object... args) {
         if (id == NotificationCenter.updateInterfaces) {
-            int mask = (Integer)args[0];
+            int mask = (Integer) args[0];
             if ((mask & MessagesController.UPDATE_MASK_AVATAR) != 0 || (mask & MessagesController.UPDATE_MASK_NAME) != 0 || (mask & MessagesController.UPDATE_MASK_STATUS) != 0) {
                 updateVisibleRows(mask);
             }
@@ -1029,89 +980,14 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
         }
     }
 
-    private void loadAdminedChannels() {
-        if (loadingAdminedChannels) {
-            return;
-        }
-        loadingAdminedChannels = true;
-        updatePrivatePublic();
-        TLRPC.TL_channels_getAdminedPublicChannels req = new TLRPC.TL_channels_getAdminedPublicChannels();
-        ConnectionsManager.getInstance().sendRequest(req, new RequestDelegate() {
-            @Override
-            public void run(final TLObject response, final TLRPC.TL_error error) {
-                AndroidUtilities.runOnUIThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        loadingAdminedChannels = false;
-                        if (response != null) {
-                            if (getParentActivity() == null) {
-                                return;
-                            }
-                            for (int a = 0; a < adminedChannelCells.size(); a++) {
-                                linearLayout.removeView(adminedChannelCells.get(a));
-                            }
-                            adminedChannelCells.clear();
-                            TLRPC.TL_messages_chats res = (TLRPC.TL_messages_chats) response;
-
-                            for (int a = 0; a < res.chats.size(); a++) {
-                                AdminedChannelCell adminedChannelCell = new AdminedChannelCell(getParentActivity(), new View.OnClickListener() {
-                                    @Override
-                                    public void onClick(View view) {
-                                        AdminedChannelCell cell = (AdminedChannelCell) view.getParent();
-                                        final TLRPC.Chat channel = cell.getCurrentChannel();
-                                        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
-                                        builder.setTitle(LocaleController.getString("AppName", R.string.AppName));
-                                        if (channel.megagroup) {
-                                            builder.setMessage(AndroidUtilities.replaceTags(LocaleController.formatString("RevokeLinkAlert", R.string.RevokeLinkAlert, "telegram.me/" + channel.username, channel.title)));
-                                        } else {
-                                            builder.setMessage(AndroidUtilities.replaceTags(LocaleController.formatString("RevokeLinkAlertChannel", R.string.RevokeLinkAlertChannel, "telegram.me/" + channel.username, channel.title)));
-                                        }
-                                        builder.setNegativeButton(LocaleController.getString("Cancel", R.string.Cancel), null);
-                                        builder.setPositiveButton(LocaleController.getString("RevokeButton", R.string.RevokeButton), new DialogInterface.OnClickListener() {
-                                            @Override
-                                            public void onClick(DialogInterface dialogInterface, int i) {
-                                                TLRPC.TL_channels_updateUsername req = new TLRPC.TL_channels_updateUsername();
-                                                req.channel = MessagesController.getInputChannel(channel);
-                                                req.username = "";
-                                                ConnectionsManager.getInstance().sendRequest(req, new RequestDelegate() {
-                                                    @Override
-                                                    public void run(TLObject response, TLRPC.TL_error error) {
-                                                        if (response instanceof TLRPC.TL_boolTrue) {
-                                                            AndroidUtilities.runOnUIThread(new Runnable() {
-                                                                @Override
-                                                                public void run() {
-                                                                    canCreatePublic = true;
-                                                                    if (nameTextView.length() > 0) {
-                                                                        checkUserName(nameTextView.getText().toString());
-                                                                    }
-                                                                    updatePrivatePublic();
-                                                                }
-                                                            });
-                                                        }
-                                                    }
-                                                }, ConnectionsManager.RequestFlagInvokeAfter);
-                                            }
-                                        });
-                                        showDialog(builder.create());
-                                    }
-                                });
-                                adminedChannelCell.setChannel(res.chats.get(a), a == res.chats.size() - 1);
-                                adminedChannelCells.add(adminedChannelCell);
-                                linearLayout.addView(adminedChannelCell, linearLayout.getChildCount() - 1, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 72));
-                            }
-                            updatePrivatePublic();
-                        }
-                    }
-                });
-            }
-        });
-    }
-
-    private boolean checkUserName(final String name) {
+    private boolean checkUserName(final String name, boolean alert) {
         if (name != null && name.length() > 0) {
             checkTextView.setVisibility(View.VISIBLE);
         } else {
             checkTextView.setVisibility(View.GONE);
+        }
+        if (alert && name.length() == 0) {
+            return true;
         }
         if (checkRunnable != null) {
             AndroidUtilities.cancelRunOnUIThread(checkRunnable);
@@ -1131,67 +1007,84 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
             for (int a = 0; a < name.length(); a++) {
                 char ch = name.charAt(a);
                 if (a == 0 && ch >= '0' && ch <= '9') {
-                    checkTextView.setText(LocaleController.getString("LinkInvalidStartNumber", R.string.LinkInvalidStartNumber));
-                    checkTextView.setTextColor(0xffcf3030);
+                    if (alert) {
+                        showErrorAlert(LocaleController.getString("LinkInvalidStartNumber", R.string.LinkInvalidStartNumber));
+                    } else {
+                        checkTextView.setText(LocaleController.getString("LinkInvalidStartNumber", R.string.LinkInvalidStartNumber));
+                        checkTextView.setTextColor(0xffcf3030);
+                    }
                     return false;
                 }
                 if (!(ch >= '0' && ch <= '9' || ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch == '_')) {
-                    checkTextView.setText(LocaleController.getString("LinkInvalid", R.string.LinkInvalid));
-                    checkTextView.setTextColor(0xffcf3030);
+                    if (alert) {
+                        showErrorAlert(LocaleController.getString("LinkInvalid", R.string.LinkInvalid));
+                    } else {
+                        checkTextView.setText(LocaleController.getString("LinkInvalid", R.string.LinkInvalid));
+                        checkTextView.setTextColor(0xffcf3030);
+                    }
                     return false;
                 }
             }
         }
         if (name == null || name.length() < 5) {
-            checkTextView.setText(LocaleController.getString("LinkInvalidShort", R.string.LinkInvalidShort));
-            checkTextView.setTextColor(0xffcf3030);
+            if (alert) {
+                showErrorAlert(LocaleController.getString("LinkInvalidShort", R.string.LinkInvalidShort));
+            } else {
+                checkTextView.setText(LocaleController.getString("LinkInvalidShort", R.string.LinkInvalidShort));
+                checkTextView.setTextColor(0xffcf3030);
+            }
             return false;
         }
         if (name.length() > 32) {
-            checkTextView.setText(LocaleController.getString("LinkInvalidLong", R.string.LinkInvalidLong));
-            checkTextView.setTextColor(0xffcf3030);
+            if (alert) {
+                showErrorAlert(LocaleController.getString("LinkInvalidLong", R.string.LinkInvalidLong));
+            } else {
+                checkTextView.setText(LocaleController.getString("LinkInvalidLong", R.string.LinkInvalidLong));
+                checkTextView.setTextColor(0xffcf3030);
+            }
             return false;
         }
 
-        checkTextView.setText(LocaleController.getString("LinkChecking", R.string.LinkChecking));
-        checkTextView.setTextColor(0xff6d6d72);
-        lastCheckName = name;
-        checkRunnable = new Runnable() {
-            @Override
-            public void run() {
-                TLRPC.TL_channels_checkUsername req = new TLRPC.TL_channels_checkUsername();
-                req.username = name;
-                req.channel = MessagesController.getInputChannel(chatId);
-                checkReqId = ConnectionsManager.getInstance().sendRequest(req, new RequestDelegate() {
-                    @Override
-                    public void run(final TLObject response, final TLRPC.TL_error error) {
-                        AndroidUtilities.runOnUIThread(new Runnable() {
-                            @Override
-                            public void run() {
-                                checkReqId = 0;
-                                if (lastCheckName != null && lastCheckName.equals(name)) {
-                                    if (error == null && response instanceof TLRPC.TL_boolTrue) {
-                                        checkTextView.setText(LocaleController.formatString("LinkAvailable", R.string.LinkAvailable, name));
-                                        checkTextView.setTextColor(0xff26972c);
-                                        lastNameAvailable = true;
-                                    } else {
-                                        if (error != null && error.text.equals("CHANNELS_ADMIN_PUBLIC_TOO_MUCH")) {
-                                            canCreatePublic = false;
-                                            loadAdminedChannels();
+        if (!alert) {
+            checkTextView.setText(LocaleController.getString("LinkChecking", R.string.LinkChecking));
+            checkTextView.setTextColor(0xff6d6d72);
+            lastCheckName = name;
+            checkRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    TLRPC.TL_channels_checkUsername req = new TLRPC.TL_channels_checkUsername();
+                    req.username = name;
+                    req.channel = MessagesController.getInputChannel(chatId);
+                    checkReqId = ConnectionsManager.getInstance().sendRequest(req, new RequestDelegate() {
+                        @Override
+                        public void run(final TLObject response, final TLRPC.TL_error error) {
+                            AndroidUtilities.runOnUIThread(new Runnable() {
+                                @Override
+                                public void run() {
+                                    checkReqId = 0;
+                                    if (lastCheckName != null && lastCheckName.equals(name)) {
+                                        if (error == null && response instanceof TLRPC.TL_boolTrue) {
+                                            checkTextView.setText(LocaleController.formatString("LinkAvailable", R.string.LinkAvailable, name));
+                                            checkTextView.setTextColor(0xff26972c);
+                                            lastNameAvailable = true;
                                         } else {
-                                            checkTextView.setText(LocaleController.getString("LinkInUse", R.string.LinkInUse));
+                                            if (error != null && error.text.equals("CHANNELS_ADMIN_PUBLIC_TOO_MUCH")) {
+                                                checkTextView.setText(LocaleController.getString("ChannelPublicLimitReached", R.string.ChannelPublicLimitReached));
+                                            } else {
+                                                checkTextView.setText(LocaleController.getString("LinkInUse", R.string.LinkInUse));
+                                            }
+                                            checkTextView.setTextColor(0xffcf3030);
+                                            lastNameAvailable = false;
                                         }
-                                        checkTextView.setTextColor(0xffcf3030);
-                                        lastNameAvailable = false;
                                     }
                                 }
-                            }
-                        });
-                    }
-                }, ConnectionsManager.RequestFlagFailOnServerErrors);
-            }
-        };
-        AndroidUtilities.runOnUIThread(checkRunnable, 300);
+                            });
+                        }
+                    }, ConnectionsManager.RequestFlagFailOnServerErrors);
+                }
+            };
+            AndroidUtilities.runOnUIThread(checkRunnable, 300);
+        }
         return true;
     }
 
@@ -1236,7 +1129,7 @@ public class ChannelCreateActivity extends BaseFragment implements NotificationC
         try {
             LayoutInflater lf = (LayoutInflater) ApplicationLoader.applicationContext.getSystemService(Activity.LAYOUT_INFLATER_SERVICE);
             View textView = lf.inflate(R.layout.group_create_bubble, null);
-            TextView text = (TextView)textView.findViewById(R.id.bubble_text_view);
+            TextView text = (TextView) textView.findViewById(R.id.bubble_text_view);
             String name = UserObject.getUserName(user);
             if (name.length() == 0 && user.phone != null && user.phone.length() != 0) {
                 name = PhoneFormat.getInstance().format("+" + user.phone);

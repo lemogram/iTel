@@ -20,10 +20,8 @@ import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
-import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
-import android.support.v4.content.FileProvider;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -33,26 +31,24 @@ import android.widget.ImageView;
 import android.widget.ProgressBar;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.BuildConfig;
+import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.FileLoader;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.ImageLoader;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.MessagesStorage;
+import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.R;
 import org.telegram.messenger.support.widget.LinearLayoutManager;
 import org.telegram.messenger.support.widget.RecyclerView;
-import org.telegram.messenger.ApplicationLoader;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.RequestDelegate;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.messenger.FileLoader;
-import org.telegram.messenger.FileLog;
-import org.telegram.messenger.MessagesStorage;
-import org.telegram.messenger.NotificationCenter;
-import org.telegram.messenger.R;
-
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
-import org.telegram.ui.Cells.WallpaperCell;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.Cells.WallpaperCell;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 
@@ -63,6 +59,7 @@ import java.util.HashMap;
 
 public class WallpapersActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate {
 
+    private final static int done_button = 1;
     private ListAdapter listAdapter;
     private ImageView backgroundImage;
     private FrameLayout progressView;
@@ -76,8 +73,6 @@ public class WallpapersActivity extends BaseFragment implements NotificationCent
     private File loadingFileObject = null;
     private TLRPC.PhotoSize loadingSize = null;
     private String currentPicturePath;
-
-    private final static int done_button = 1;
 
     @Override
     public boolean onFragmentCreate() {
@@ -106,7 +101,15 @@ public class WallpapersActivity extends BaseFragment implements NotificationCent
 
     @Override
     public View createView(Context context) {
-        actionBar.setBackButtonImage(R.drawable.ic_ab_back);
+        //Teleh
+        SharedPreferences themePrefs = ApplicationLoader.applicationContext.getSharedPreferences(AndroidUtilities.THEME_PREFS, AndroidUtilities.THEME_PREFS_MODE);
+        int def = themePrefs.getInt("themeColor", AndroidUtilities.defColor);
+        int iconColor = themePrefs.getInt("chatsHeaderIconsColor", 0xffffffff);
+        Drawable back = getParentActivity().getResources().getDrawable(R.drawable.ic_ab_back);
+        if (back != null) back.setColorFilter(iconColor, PorterDuff.Mode.MULTIPLY);
+        actionBar.setBackButtonDrawable(back);
+        actionBar.setTitleColor(themePrefs.getInt("chatsHeaderTitleColor", 0xffffffff));
+        //End Teleh
         actionBar.setAllowOverlayTitle(true);
         actionBar.setTitle(LocaleController.getString("ChatBackground", R.string.ChatBackground));
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
@@ -222,13 +225,7 @@ public class WallpapersActivity extends BaseFragment implements NotificationCent
                                     Intent takePictureIntent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);
                                     File image = AndroidUtilities.generatePicturePath();
                                     if (image != null) {
-                                        if (Build.VERSION.SDK_INT >= 24) {
-                                            takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, FileProvider.getUriForFile(getParentActivity(), BuildConfig.APPLICATION_ID + ".provider", image));
-                                            takePictureIntent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-                                            takePictureIntent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                                        } else {
-                                            takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, Uri.fromFile(image));
-                                        }
+                                        takePictureIntent.putExtra(MediaStore.EXTRA_OUTPUT, Uri.fromFile(image));
                                         currentPicturePath = image.getAbsolutePath();
                                     }
                                     startActivityForResult(takePictureIntent, 10);
@@ -485,13 +482,6 @@ public class WallpapersActivity extends BaseFragment implements NotificationCent
 
     private class ListAdapter extends RecyclerView.Adapter {
 
-        private class Holder extends RecyclerView.ViewHolder {
-
-            public Holder(View itemView) {
-                super(itemView);
-            }
-        }
-
         private Context mContext;
 
         public ListAdapter(Context context) {
@@ -517,6 +507,13 @@ public class WallpapersActivity extends BaseFragment implements NotificationCent
         @Override
         public void onBindViewHolder(RecyclerView.ViewHolder viewHolder, int i) {
             ((WallpaperCell) viewHolder.itemView).setWallpaper(i == 0 ? null : wallPapers.get(i - 1), selectedBackground);
+        }
+
+        private class Holder extends RecyclerView.ViewHolder {
+
+            public Holder(View itemView) {
+                super(itemView);
+            }
         }
     }
 }

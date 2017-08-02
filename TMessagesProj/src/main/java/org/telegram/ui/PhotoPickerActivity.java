@@ -13,7 +13,6 @@ import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.graphics.Bitmap;
-import android.os.Build;
 import android.util.Base64;
 import android.view.Gravity;
 import android.view.LayoutInflater;
@@ -34,11 +33,18 @@ import android.widget.TextView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.ApplicationLoader;
+import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLoader;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaController;
+import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.R;
+import org.telegram.messenger.UserConfig;
+import org.telegram.messenger.Utilities;
 import org.telegram.messenger.volley.AuthFailureError;
 import org.telegram.messenger.volley.Request;
 import org.telegram.messenger.volley.RequestQueue;
@@ -46,23 +52,16 @@ import org.telegram.messenger.volley.Response;
 import org.telegram.messenger.volley.VolleyError;
 import org.telegram.messenger.volley.toolbox.JsonObjectRequest;
 import org.telegram.messenger.volley.toolbox.Volley;
-import org.telegram.messenger.ApplicationLoader;
-import org.telegram.messenger.BuildVars;
-import org.telegram.messenger.FileLog;
-import org.telegram.messenger.R;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.RequestDelegate;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.messenger.MessageObject;
-import org.telegram.messenger.UserConfig;
-import org.telegram.messenger.Utilities;
+import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
+import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Adapters.BaseFragmentAdapter;
-import org.telegram.ui.ActionBar.ActionBar;
-import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.Cells.PhotoPickerPhotoCell;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.LayoutHelper;
@@ -76,25 +75,14 @@ import java.util.Map;
 
 public class PhotoPickerActivity extends BaseFragment implements NotificationCenter.NotificationCenterDelegate, PhotoViewer.PhotoViewerProvider {
 
-    public interface PhotoPickerActivityDelegate {
-        void selectedPhotosChanged();
-
-        void actionButtonPressed(boolean canceled);
-
-        boolean didSelectVideo(String path);
-    }
-
     private RequestQueue requestQueue;
-
     private int type;
     private HashMap<String, MediaController.SearchImage> selectedWebPhotos;
     private HashMap<Integer, MediaController.PhotoEntry> selectedPhotos;
     private ArrayList<MediaController.SearchImage> recentImages;
-
     private ArrayList<MediaController.SearchImage> searchResult = new ArrayList<>();
     private HashMap<String, MediaController.SearchImage> searchResultKeys = new HashMap<>();
     private HashMap<String, MediaController.SearchImage> searchResultUrls = new HashMap<>();
-
     private boolean searching;
     private String nextSearchBingString;
     private boolean giphySearchEndReached = true;
@@ -103,10 +91,7 @@ public class PhotoPickerActivity extends BaseFragment implements NotificationCen
     private int nextGiphySearchOffset;
     private int giphyReqId;
     private int lastSearchToken;
-    private boolean allowCaption = true;
-
     private MediaController.AlbumEntry selectedAlbum;
-
     private GridView listView;
     private ListAdapter listAdapter;
     private PickerBottomLayout pickerBottomLayout;
@@ -117,10 +102,9 @@ public class PhotoPickerActivity extends BaseFragment implements NotificationCen
     private boolean sendPressed;
     private boolean singlePhoto;
     private ChatActivity chatActivity;
-
     private PhotoPickerActivityDelegate delegate;
 
-    public PhotoPickerActivity(int type, MediaController.AlbumEntry selectedAlbum, HashMap<Integer, MediaController.PhotoEntry> selectedPhotos, HashMap<String, MediaController.SearchImage> selectedWebPhotos, ArrayList<MediaController.SearchImage> recentImages, boolean onlyOnePhoto, boolean allowCaption, ChatActivity chatActivity) {
+    public PhotoPickerActivity(int type, MediaController.AlbumEntry selectedAlbum, HashMap<Integer, MediaController.PhotoEntry> selectedPhotos, HashMap<String, MediaController.SearchImage> selectedWebPhotos, ArrayList<MediaController.SearchImage> recentImages, boolean onlyOnePhoto, ChatActivity chatActivity) {
         super();
         this.selectedAlbum = selectedAlbum;
         this.selectedPhotos = selectedPhotos;
@@ -129,7 +113,6 @@ public class PhotoPickerActivity extends BaseFragment implements NotificationCen
         this.recentImages = recentImages;
         this.singlePhoto = onlyOnePhoto;
         this.chatActivity = chatActivity;
-        this.allowCaption = allowCaption;
         if (selectedAlbum != null && selectedAlbum.isVideo) {
             singlePhoto = true;
         }
@@ -501,11 +484,6 @@ public class PhotoPickerActivity extends BaseFragment implements NotificationCen
     }
 
     @Override
-    public boolean scaleToFill() {
-        return false;
-    }
-
-    @Override
     public PhotoViewer.PlaceProviderObject getPlaceForPhoto(MessageObject messageObject, TLRPC.FileLocation fileLocation, int index) {
         PhotoPickerPhotoCell cell = getCellForIndex(index);
         if (cell != null) {
@@ -513,7 +491,7 @@ public class PhotoPickerActivity extends BaseFragment implements NotificationCen
             cell.photoImage.getLocationInWindow(coords);
             PhotoViewer.PlaceProviderObject object = new PhotoViewer.PlaceProviderObject();
             object.viewX = coords[0];
-            object.viewY = coords[1] - (Build.VERSION.SDK_INT >= 21 ? 0 : AndroidUtilities.statusBarHeight);
+            object.viewY = coords[1] - AndroidUtilities.statusBarHeight;
             object.parentView = listView;
             object.imageReceiver = cell.photoImage.getImageReceiver();
             object.thumb = object.imageReceiver.getBitmap();
@@ -562,11 +540,6 @@ public class PhotoPickerActivity extends BaseFragment implements NotificationCen
                 }
             }
         }
-    }
-
-    @Override
-    public boolean allowCaption() {
-        return allowCaption;
     }
 
     @Override
@@ -1033,6 +1006,14 @@ public class PhotoPickerActivity extends BaseFragment implements NotificationCen
         }
     }
 
+    public interface PhotoPickerActivityDelegate {
+        void selectedPhotosChanged();
+
+        void actionButtonPressed(boolean canceled);
+
+        boolean didSelectVideo(String path);
+    }
+
     private class ListAdapter extends BaseFragmentAdapter {
         private Context mContext;
 
@@ -1104,7 +1085,6 @@ public class PhotoPickerActivity extends BaseFragment implements NotificationCen
                                     selectedPhotos.remove(photoEntry.imageId);
                                     photoEntry.imagePath = null;
                                     photoEntry.thumbPath = null;
-                                    photoEntry.stickers.clear();
                                     updatePhotoAtIndex(index);
                                 } else {
                                     selectedPhotos.put(photoEntry.imageId, photoEntry);

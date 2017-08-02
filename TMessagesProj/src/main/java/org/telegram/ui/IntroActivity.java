@@ -14,8 +14,6 @@ import android.app.Activity;
 import android.content.Intent;
 import android.content.pm.ActivityInfo;
 import android.database.DataSetObserver;
-import android.graphics.Shader;
-import android.graphics.drawable.BitmapDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Parcelable;
@@ -58,10 +56,6 @@ public class IntroActivity extends Activity {
 
         if (AndroidUtilities.isTablet()) {
             setContentView(R.layout.intro_layout_tablet);
-            View imageView = findViewById(R.id.background_image_intro);
-            BitmapDrawable drawable = (BitmapDrawable) getResources().getDrawable(R.drawable.catstile);
-            drawable.setTileModeXY(Shader.TileMode.REPEAT, Shader.TileMode.REPEAT);
-            imageView.setBackgroundDrawable(drawable);
         } else {
             setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
             setContentView(R.layout.intro_layout);
@@ -126,6 +120,7 @@ public class IntroActivity extends Activity {
         }
         viewPager = (ViewPager) findViewById(R.id.intro_view_pager);
         TextView startMessagingButton = (TextView) findViewById(R.id.start_messaging_button);
+        startMessagingButton.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
         startMessagingButton.setText(LocaleController.getString("StartMessaging", R.string.StartMessaging).toUpperCase());
         if (Build.VERSION.SDK_INT >= 21) {
             StateListAnimator animator = new StateListAnimator();
@@ -279,6 +274,8 @@ public class IntroActivity extends Activity {
 
             headerTextView.setText(getString(titles[position]));
             messageTextView.setText(AndroidUtilities.replaceTags(getString(messages[position])));
+            headerTextView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
+            messageTextView.setTypeface(AndroidUtilities.getTypeface("fonts/rmedium.ttf"));
 
             return view;
         }
